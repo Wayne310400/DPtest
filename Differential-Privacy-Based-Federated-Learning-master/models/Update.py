@@ -108,6 +108,14 @@ class LocalUpdateDP(object):
             for k, v in state_dict.items():
                 state_dict[k] += torch.from_numpy(np.random.normal(loc=0, scale=sensitivity * self.noise_scale,
                                                                    size=v.shape)).to(self.args.device)
+        elif self.args.dp_mechanism == 'Partial':
+            for k, v in state_dict.items():
+                parital_noise = np.random.normal(loc=0, scale=sensitivity * self.noise_scale, size=v.shape) # not partial, is all
+                partial_indices = np.random.choice(np.arange(parital_noise.size), replace=False, size=int(parital_noise.size * 0.5))
+                parital_noise[partial_indices] = 0
+                print(f"Number of non-zero: {np.count_nonzero(parital_noise)}")
+                print(f"Number of zeros: {parital_noise.size - np.count_nonzero(parital_noise)}")
+                state_dict[k] += torch.from_numpy(parital_noise).to(self.args.device)
         net.load_state_dict(state_dict)
 
 
