@@ -45,6 +45,10 @@ class LocalUpdateDP(object):
             return Gaussian_Simple(epsilon=epsilon_single_query, delta=delta_single_query)
         elif self.args.dp_mechanism == 'MA':
             return Gaussian_MA(epsilon=self.args.dp_epsilon, delta=self.args.dp_delta, q=self.args.dp_sample, epoch=self.times)
+        elif self.args.dp_mechanism == 'Partial':
+            epsilon_single_query = self.args.dp_epsilon / self.times
+            delta_single_query = self.args.dp_delta / self.times
+            return Gaussian_Simple(epsilon=epsilon_single_query, delta=delta_single_query)
 
     def train(self, net):
         net.train()
@@ -73,6 +77,9 @@ class LocalUpdateDP(object):
             # Laplace use 1 norm
             self.per_sample_clip(net, self.args.dp_clip, norm=1)
         elif self.args.dp_mechanism == 'Gaussian' or self.args.dp_mechanism == 'MA':
+            # Gaussian use 2 norm
+            self.per_sample_clip(net, self.args.dp_clip, norm=2)
+        elif self.args.dp_mechanism == 'Partial':
             # Gaussian use 2 norm
             self.per_sample_clip(net, self.args.dp_clip, norm=2)
 
@@ -110,12 +117,10 @@ class LocalUpdateDP(object):
                                                                    size=v.shape)).to(self.args.device)
         elif self.args.dp_mechanism == 'Partial':
             for k, v in state_dict.items():
-                parital_noise = np.random.normal(loc=0, scale=sensitivity * self.noise_scale, size=v.shape) # not partial, is all
+                parital_noise = np.random.normal(loc=0, scale=sensitivity * self.noise_scale, size=v.shape).flatten() # not partial, is all
                 partial_indices = np.random.choice(np.arange(parital_noise.size), replace=False, size=int(parital_noise.size * 0.5))
                 parital_noise[partial_indices] = 0
-                print(f"Number of non-zero: {np.count_nonzero(parital_noise)}")
-                print(f"Number of zeros: {parital_noise.size - np.count_nonzero(parital_noise)}")
-                state_dict[k] += torch.from_numpy(parital_noise).to(self.args.device)
+                state_dict[k] += torch.from_numpy(parital_noise.reshape(v.shape)).to(self.args.device)
         net.load_state_dict(state_dict)
 
 
