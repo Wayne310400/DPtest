@@ -166,9 +166,14 @@ if __name__ == '__main__':
     rootpath = './log'
     if not os.path.exists(rootpath):
         os.makedirs(rootpath)
-    accfile = open(rootpath + '/accfile_fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}.dat'.
-                   format(args.dataset, args.model, args.epochs, args.iid,
-                          args.dp_mechanism, args.dp_epsilon), "w")
+    if args.dp_mechanism == 'Partial':
+        accfile = open(rootpath + '/accfile_fed_{}_{}_{}_iid{}_dp_{}{}_epsilon_{}.dat'.
+                       format(args.dataset, args.model, args.epochs, args.iid,
+                       args.dp_mechanism, args.dp_ratio, args.dp_epsilon), "w")
+    else:
+        accfile = open(rootpath + '/accfile_fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}.dat'.
+                       format(args.dataset, args.model, args.epochs, args.iid,
+                       args.dp_mechanism, args.dp_epsilon), "w")
 
     for ac in acc_test:
         sac = str(ac)
@@ -180,8 +185,12 @@ if __name__ == '__main__':
     plt.figure()
     plt.plot(range(len(acc_test)), acc_test)
     plt.ylabel('test accuracy')
-    plt.savefig(rootpath + '/fed_{}_{}_{}_C{}_iid{}_dp_{}_epsilon_{}_acc.png'.format(
-        args.dataset, args.model, args.epochs, args.frac, args.iid, args.dp_mechanism, args.dp_epsilon))
+    if args.dp_mechanism == 'Partial':
+        plt.savefig(rootpath + '/fed_{}_{}_{}_C{}_iid{}_dp_{}{}_epsilon_{}_acc.png'.format(
+            args.dataset, args.model, args.epochs, args.frac, args.iid, args.dp_mechanism, args.dp_ratio, args.dp_epsilon))
+    else:
+        plt.savefig(rootpath + '/fed_{}_{}_{}_C{}_iid{}_dp_{}_epsilon_{}_acc.png'.format(
+            args.dataset, args.model, args.epochs, args.frac, args.iid, args.dp_mechanism, args.dp_epsilon))
 
 
 
