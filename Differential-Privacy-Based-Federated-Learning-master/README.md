@@ -90,9 +90,20 @@ Abadi, Martin, et al. "Deep learning with differential privacy." *Proceedings of
 Based on Simple Composition in DP. 
 
 ```shell
-python main.py --dataset mnist --model cnn --dp_mechanism Laplace --dp_epsilon 30 --dp_clip 50
+python3 main.py --dataset cifar --model cnn --dp_mechanism Partial --dp_epsilon 40 --dp_clip 50 --serial --dp_ratio 0.8
 ```
 
+### Partial Differential Privacy Mechanism
+
+Based on the proposed scheme. 
+
+```shell
+python main.py --dataset mnist --model cnn --dp_mechanism Laplace --dp_epsilon 30 --dp_clip 50
+```
+Drawing code: 
+```shell
+python3 draw.py --output dp_ratio --dp_mechanism Partial --dp_ratios 0.0 0.2 0.5 0.8 1.0 --epsilon 40.0
+```
 
 ## Papers
 
