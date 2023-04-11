@@ -8,6 +8,7 @@ from utils.dp_mechanism import cal_sensitivity, cal_sensitivity_MA, Laplace, Gau
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import random
+import copy
 from sklearn import metrics
 
 class DatasetSplit(Dataset):
@@ -99,9 +100,10 @@ class LocalUpdateDP(object):
         for param in net.parameters():
             param.grad = param.grad_sample.detach().mean(dim=0)
 
-    def add_noise(self, net):
+    def add_noise(self, state_dict, nondrop_index, flat_indice):
         sensitivity = cal_sensitivity(self.lr, self.args.dp_clip, len(self.idxs_sample))
-        state_dict = net.state_dict()
+        weight_slice = ()
+        # state_dict = net.state_dict()
         if self.args.dp_mechanism == 'Laplace':
             for k, v in state_dict.items():
                 state_dict[k] += torch.from_numpy(np.random.laplace(loc=0, scale=sensitivity * self.noise_scale,
@@ -115,25 +117,33 @@ class LocalUpdateDP(object):
             for k, v in state_dict.items():
                 state_dict[k] += torch.from_numpy(np.random.normal(loc=0, scale=sensitivity * self.noise_scale,
                                                                    size=v.shape)).to(self.args.device)
+        # elif self.args.dp_mechanism == 'Partial':
+        #     for k, v in state_dict.items():
+        #         parital_noise = np.random.normal(loc=0, scale=sensitivity * self.noise_scale, size=v.shape).flatten() # not partial, is all
+        #         partial_indices = np.random.choice(np.arange(parital_noise.size), replace=False, size=int(parital_noise.size * (1.0-self.args.dp_ratio)))
+        #         parital_noise[partial_indices] = 0
+        #         state_dict[k] += torch.from_numpy(parital_noise.reshape(v.shape)).to(self.args.device)
         elif self.args.dp_mechanism == 'Partial':
-            for k, v in state_dict.items():
-                parital_noise = np.random.normal(loc=0, scale=sensitivity * self.noise_scale, size=v.shape).flatten() # not partial, is all
-                partial_indices = np.random.choice(np.arange(parital_noise.size), replace=False, size=int(parital_noise.size * (1.0-self.args.dp_ratio)))
-                parital_noise[partial_indices] = 0
-                state_dict[k] += torch.from_numpy(parital_noise.reshape(v.shape)).to(self.args.device)
-        net.load_state_dict(state_dict)
-
+            noise_store = torch.tensor([])
+            for (s, e) in flat_indice:
+                noise_unit = torch.from_numpy(np.random.normal(loc=0, scale=sensitivity * self.noise_scale, size=(e-s, 1)))
+                noise_store = torch.cat((noise_store, noise_unit))
+            # cut noise
+            weight_slice = torch.chunk(noise_store, self.args.num_users)
+            
+        return state_dict, weight_slice
 
 class LocalUpdateDPSerial(LocalUpdateDP):
     def __init__(self, args, dataset=None, idxs=None):
         super().__init__(args, dataset, idxs)
 
-    def train(self, net):
+    def train(self, net, nondrop_users, flat_indice, split_index, id):
         net.train()
         # train and update
         optimizer = torch.optim.SGD(net.parameters(), lr=self.lr, momentum=self.args.momentum)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=self.args.lr_decay)
         losses = 0
+        weight_protect, nondrop_index = [], []
         for images, labels in self.ldr_train:
             net.zero_grad()
             index = int(len(images) / self.args.serial_bs)
@@ -161,7 +171,7 @@ class LocalUpdateDPSerial(LocalUpdateDP):
             optimizer.step()
             scheduler.step()
             # add noises to parameters
-            if self.args.dp_mechanism != 'no_dp':
-                self.add_noise(net)
+            # if self.args.dp_mechanism != 'no_dp': # move to main.py
+            #     self.add_noise(net, nondrop_index, flat_indice)
             self.lr = scheduler.get_last_lr()[0]
-        return net.state_dict(), losses / len(self.idxs_sample)
+        return net.state_dict(), losses / len(self.idxs_sample) # if move add noise move back, use this

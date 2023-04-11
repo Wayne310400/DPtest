@@ -17,6 +17,7 @@ def args_parser():
     parser.add_argument('--lr_decay', type=float, default=0.995, help="learning rate decay each round")
     parser.add_argument('--momentum', type=float, default=0.5, help="SGD momentum (default: 0.5)")
     parser.add_argument('--split', type=str, default='user', help="train-test split type, user or sample")
+    parser.add_argument('--drop', type=float, default=0.0, help="the fraction of dropout clients")
 
     # model arguments
     parser.add_argument('--model', type=str, default='cnn', help='model name')

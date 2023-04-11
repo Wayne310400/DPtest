@@ -17,7 +17,7 @@ from utils.sampling import mnist_iid, mnist_noniid, cifar_iid, cifar_noniid
 from utils.options import args_parser
 from models.Update import LocalUpdateDP, LocalUpdateDPSerial
 from models.Nets import MLP, CNNMnist, CNNCifar, CNNFemnist, CharLSTM
-from models.Fed import FedAvg, FedWeightAvg
+from models.Fed import FedAvg, FedWeightAvg, FlatSplitParams, SliceLocalWeight, ProtectWeight
 from models.test import test_img
 from utils.dataset import FEMNIST, ShakeSpeare
 from opacus.grad_sample import GradSampleModule
@@ -128,6 +128,9 @@ if __name__ == '__main__':
 
     all_clients = list(range(args.num_users))
 
+    # get indice & dropout users' protect weight noise(is zero)
+    drop_protect, split_index, flat_indice = FlatSplitParams(w_glob, args.num_users)
+
     # training
     acc_test = []
     if args.serial:
@@ -137,18 +140,42 @@ if __name__ == '__main__':
 
     for iter in range(args.epochs):
         t_start = time.time()
-        w_locals, loss_locals, weight_locols = [], [], []
+        w_locals, loss_locals, weight_locols, weight_slices, noise_slices, nondrop_index, drop_index = [], [], [], [], [], [], []
         m = max(int(args.frac * args.num_users), 1)
+
+        # choice dropout users
+        drop_users = random.sample(range(args.num_users), int(args.num_users * args.drop))
+        nondrop_users = [x for x in range(args.num_users) if x not in drop_users]
+        for i in nondrop_users:
+            nondrop_index.append([split_index[i], split_index[i+1]])
+
         # idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         begin_index = iter % (1 / args.frac)
         idxs_users = all_clients[int(begin_index * args.num_users * args.frac):
                                    int((begin_index + 1) * args.num_users * args.frac)]
         for idx in idxs_users:
+            if idx in drop_users:
+                weight_slices.append("D") # mark dropout users' weight
+                noise_slices.append("D") # mark dropout users' noise
+                continue
             local = clients[idx]
-            w, loss = local.train(net=copy.deepcopy(net_glob).to(args.device))
-            w_locals.append(copy.deepcopy(w))
+            w, loss = local.train(net=copy.deepcopy(net_glob).to(args.device), nondrop_users=nondrop_users, flat_indice=flat_indice, split_index=split_index, id=idx)
+            if args.dp_mechanism != 'no_dp': # add DP noise or get DP noise slice 
+                noisy_w, noise_slice = local.add_noise(copy.deepcopy(w), nondrop_index, flat_indice)
+                noise_slices.append(noise_slice)
+            else:
+                noisy_w = w
+            if args.dp_mechanism == 'Partial':
+                weight_slice = SliceLocalWeight(w, split_index) # divide local weight to several unit
+                weight_slices.append(weight_slice)
+            w_locals.append(copy.deepcopy(noisy_w))
             loss_locals.append(copy.deepcopy(loss))
             weight_locols.append(len(dict_users[idx]))
+
+        # if get other users' partial weight add them and divide 2 by index; if not, add DP noise bu index
+        if args.dp_mechanism == 'Partial':
+            for i, id in enumerate(nondrop_users):
+                ProtectWeight(w_locals[i], noise_slices, weight_slices, split_index, id, flat_indice) # this function will directly change w_local
 
         # update global weights
         w_glob = FedWeightAvg(w_locals, weight_locols)
@@ -159,7 +186,7 @@ if __name__ == '__main__':
         net_glob.eval()
         acc_t, loss_t = test_img(net_glob, dataset_test, args)
         t_end = time.time()
-        print("Round {:3d},Testing accuracy: {:.2f},Time:  {:.2f}s".format(iter, acc_t, t_end - t_start))
+        print("Round {:3d},Testing accuracy: {:.2f},Time:  {:.2f}s, dropout users: {}".format(iter, acc_t, t_end - t_start, drop_users))
 
         acc_test.append(acc_t.item())
 
