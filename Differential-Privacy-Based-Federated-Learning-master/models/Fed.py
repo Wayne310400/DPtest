@@ -55,7 +55,7 @@ def SliceLocalWeight(local_w, split_index):
     flat_w = torch.cat([torch.flatten(value) for key, value in state_dict.items()]).view(-1, 1)
     return torch.chunk(flat_w, split_num)
 
-def ProtectWeight(local_w, dp_noise, weight_slices, split_index, id, flat_indice): # add dp noise & other users' weight
+def ProtectWeight(args, local_w, dp_noise, weight_slices, split_index, id, flat_indice): # add dp noise & other users' weight
     split_num = len(split_index)-1
     # flat local_w which wants to add protect mechanism
     flat_w = torch.cat([torch.flatten(value) for key, value in local_w.items()]).view(-1, 1)
@@ -64,7 +64,7 @@ def ProtectWeight(local_w, dp_noise, weight_slices, split_index, id, flat_indice
     # add dp_noise & weight_slice on slice local_w by index
     for i, seq in enumerate(add_sequence):
         if weight_slices[seq] == 'D':
-            flat_w[split_index[i]:split_index[i+1]] += dp_noise[id][i]
+            flat_w[split_index[i]:split_index[i+1]] += dp_noise[id][i].to(args.device)
         else:
             flat_w[split_index[i]:split_index[i+1]] = (flat_w[split_index[i]:split_index[i+1]] + weight_slices[seq][i]) / 2
     # unflat protected local_w

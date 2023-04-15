@@ -132,7 +132,7 @@ if __name__ == '__main__':
     drop_protect, split_index, flat_indice = FlatSplitParams(w_glob, args.num_users)
 
     # training
-    acc_test = []
+    acc_test, loss_test, time_test = [], [], []
     if args.serial:
         clients = [LocalUpdateDPSerial(args=args, dataset=dataset_train, idxs=dict_users[i]) for i in range(args.num_users)]
     else:
@@ -159,9 +159,9 @@ if __name__ == '__main__':
                 noise_slices.append("D") # mark dropout users' noise
                 continue
             local = clients[idx]
-            w, loss = local.train(net=copy.deepcopy(net_glob).to(args.device), nondrop_users=nondrop_users, flat_indice=flat_indice, split_index=split_index, id=idx)
+            w, loss = local.train(net=copy.deepcopy(net_glob).to(args.device))
             if args.dp_mechanism != 'no_dp': # add DP noise or get DP noise slice 
-                noisy_w, noise_slice = local.add_noise(copy.deepcopy(w), nondrop_index, flat_indice)
+                noisy_w, noise_slice = local.add_noise(copy.deepcopy(w), flat_indice)
                 noise_slices.append(noise_slice)
             else:
                 noisy_w = w
@@ -175,7 +175,7 @@ if __name__ == '__main__':
         # if get other users' partial weight add them and divide 2 by index; if not, add DP noise bu index
         if args.dp_mechanism == 'Partial':
             for i, id in enumerate(nondrop_users):
-                ProtectWeight(w_locals[i], noise_slices, weight_slices, split_index, id, flat_indice) # this function will directly change w_local
+                ProtectWeight(args, w_locals[i], noise_slices, weight_slices, split_index, id, flat_indice) # this function will directly change w_local
 
         # update global weights
         w_glob = FedWeightAvg(w_locals, weight_locols)
@@ -185,17 +185,31 @@ if __name__ == '__main__':
         # print accuracy
         net_glob.eval()
         acc_t, loss_t = test_img(net_glob, dataset_test, args)
-        t_end = time.time()
-        print("Round {:3d},Testing accuracy: {:.2f},Time:  {:.2f}s, dropout users: {}".format(iter, acc_t, t_end - t_start, drop_users))
+        time_t = time.time() - t_start
+        print("Round {:3d},Testing accuracy: {:.2f},Time:  {:.2f}s, dropout users: {}".format(iter, acc_t, time_t, drop_users))
 
         acc_test.append(acc_t.item())
+        loss_test.append(loss_t)
+        time_test.append(time_t)
 
     rootpath = './log'
     if not os.path.exists(rootpath):
         os.makedirs(rootpath)
-    accfile = open(rootpath + '/accfile_fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
+    if not os.path.exists(rootpath + '/acc'):
+        os.makedirs(rootpath + '/acc')
+    if not os.path.exists(rootpath + '/loss'):
+        os.makedirs(rootpath + '/loss')
+    if not os.path.exists(rootpath + '/time'):
+        os.makedirs(rootpath + '/time')
+    accfile = open(rootpath + '/acc' + '/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
                     format(args.dataset, args.model, args.epochs, args.iid,
                     args.dp_mechanism, args.dp_epsilon, args.drop), "w")
+    lossfile = open(rootpath + '/loss' + '/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
+                    format(args.dataset, args.model, args.epochs, args.iid,
+                    args.dp_mechanism, args.dp_epsilon, args.drop), "w")
+    timefile = open(rootpath + '/time' + '/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}_time_{:.2f}.dat'.
+                    format(args.dataset, args.model, args.epochs, args.iid,
+                    args.dp_mechanism, args.dp_epsilon, args.drop, sum(time_test)), "w")
 
     for ac in acc_test:
         sac = str(ac)
@@ -203,12 +217,27 @@ if __name__ == '__main__':
         accfile.write('\n')
     accfile.close()
 
-    # plot loss curve
+    for lo in loss_test:
+        slo = str(lo)
+        lossfile.write(slo)
+        lossfile.write('\n')
+    lossfile.close()
+
+    for ti in time_test:
+        sti = str(ti)
+        timefile.write(sti)
+        timefile.write('\n')
+    timefile.close()
+
+    # plot loss & accuracy curve
     plt.figure()
     plt.plot(range(len(acc_test)), acc_test)
     plt.ylabel('test accuracy')
-    plt.savefig(rootpath + '/fed_{}_{}_{}_C{}_iid{}_dp_{}_epsilon_{}_drop_{}_acc.png'.format(
+    plt.savefig(rootpath + '/acc' + '/fed_{}_{}_{}_C{}_iid{}_dp_{}_epsilon_{}_drop_{}_acc.png'.format(
             args.dataset, args.model, args.epochs, args.frac, args.iid, args.dp_mechanism, args.dp_epsilon, args.drop))
-
-
-
+    
+    plt.figure()
+    plt.plot(range(len(loss_test)), loss_test)
+    plt.ylabel('test loss')
+    plt.savefig(rootpath + '/loss' + '/fed_{}_{}_{}_C{}_iid{}_dp_{}_epsilon_{}_drop_{}_loss.png'.format(
+            args.dataset, args.model, args.epochs, args.frac, args.iid, args.dp_mechanism, args.dp_epsilon, args.drop))

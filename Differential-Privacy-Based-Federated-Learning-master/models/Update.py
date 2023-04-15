@@ -100,7 +100,7 @@ class LocalUpdateDP(object):
         for param in net.parameters():
             param.grad = param.grad_sample.detach().mean(dim=0)
 
-    def add_noise(self, state_dict, nondrop_index, flat_indice):
+    def add_noise(self, state_dict, flat_indice):
         sensitivity = cal_sensitivity(self.lr, self.args.dp_clip, len(self.idxs_sample))
         weight_slice = ()
         # state_dict = net.state_dict()
@@ -137,13 +137,12 @@ class LocalUpdateDPSerial(LocalUpdateDP):
     def __init__(self, args, dataset=None, idxs=None):
         super().__init__(args, dataset, idxs)
 
-    def train(self, net, nondrop_users, flat_indice, split_index, id):
+    def train(self, net):
         net.train()
         # train and update
         optimizer = torch.optim.SGD(net.parameters(), lr=self.lr, momentum=self.args.momentum)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=self.args.lr_decay)
         losses = 0
-        weight_protect, nondrop_index = [], []
         for images, labels in self.ldr_train:
             net.zero_grad()
             index = int(len(images) / self.args.serial_bs)
