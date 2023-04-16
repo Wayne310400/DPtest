@@ -44,6 +44,52 @@ if __name__ == '__main__':
         plt.title('{} {}'.format(args.dataset, args.dp_mechanism))
         plt.legend()
         plt.savefig('{}_{}.png'.format(args.dataset, args.dp_mechanism))
+    
+    elif args.output == 'drop':
+        if args.acc:
+            plt.figure()
+            plt.ylabel('test accuracy')
+            plt.xlabel('global round')
+            for drop in args.drops:
+                y = openfile('./log/acc/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
+                    format(args.dataset, args.model, args.epoch, args.iid, args.dp_mechanism, args.epsilon, drop))
+                plt.plot(range(args.epoch), y, label='drop_ratio={}'.format(drop))
+            plt.title('{} {} Accuracy'.format(args.dataset, args.dp_mechanism))
+            plt.legend()
+            plt.savefig('./log/acc/{}_{}.png'.format(args.dataset, args.dp_mechanism))
+            plt.close()
+
+        if args.loss:
+            plt.figure()
+            plt.ylabel('test accuracy')
+            plt.xlabel('global round')
+            for drop in args.drops:
+                y = openfile('./log/loss/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
+                    format(args.dataset, args.model, args.epoch, args.iid, args.dp_mechanism, args.epsilon, drop))
+                plt.plot(range(args.epoch), y, label='drop_ratio={}'.format(drop))
+            plt.title('{} {} Loss'.format(args.dataset, args.dp_mechanism))
+            plt.legend()
+            plt.savefig('./log/loss/{}_{}.png'.format(args.dataset, args.dp_mechanism))
+            plt.close()
+
+        plt.figure()
+        plt.ylabel('test accuracy')
+        plt.xlabel('drop ratio')
+        partial_acc, gaussian_acc = [], []
+        for drop in args.drops:
+            y = openfile('./log/acc/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
+                format(args.dataset, args.model, args.epoch, args.iid, 'Partial', args.epsilon, drop))
+            partial_acc.append(y[-1])
+        for drop in args.drops:
+            y = openfile('./log/acc/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
+                format(args.dataset, args.model, args.epoch, args.iid, 'Gaussian', args.epsilon, drop))
+            gaussian_acc.append(y[-1])
+        plt.plot(args.drops, partial_acc, label='{}'.format("Proposed Scheme"))
+        plt.plot(args.drops, gaussian_acc, label='{}'.format("Gaussian"))
+        plt.title('{} Accuracy'.format(args.dataset))
+        plt.legend()
+        plt.savefig('Compare.png')
+        plt.close()
 
     # plt.figure()
     # epsilon_array = ['1.0', '5.0', '10.0', '20.0', '30.0']

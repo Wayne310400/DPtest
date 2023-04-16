@@ -15,6 +15,7 @@ import os
 
 from utils.sampling import mnist_iid, mnist_noniid, cifar_iid, cifar_noniid
 from utils.options import args_parser
+from utils.analysis import security_analysis
 from models.Update import LocalUpdateDP, LocalUpdateDPSerial
 from models.Nets import MLP, CNNMnist, CNNCifar, CNNFemnist, CharLSTM
 from models.Fed import FedAvg, FedWeightAvg, FlatSplitParams, SliceLocalWeight, ProtectWeight
@@ -131,8 +132,11 @@ if __name__ == '__main__':
     # get indice & dropout users' protect weight noise(is zero)
     drop_protect, split_index, flat_indice = FlatSplitParams(w_glob, args.num_users)
 
+    sec_train = copy.deepcopy(dataset_train)
+    sec_test = copy.deepcopy(dataset_test)
+
     # training
-    acc_test, loss_test, time_test = [], [], []
+    acc_test, loss_test, time_test, security_test = [], [], [], []
     if args.serial:
         clients = [LocalUpdateDPSerial(args=args, dataset=dataset_train, idxs=dict_users[i]) for i in range(args.num_users)]
     else:
@@ -186,11 +190,26 @@ if __name__ == '__main__':
         net_glob.eval()
         acc_t, loss_t = test_img(net_glob, dataset_test, args)
         time_t = time.time() - t_start
-        print("Round {:3d},Testing accuracy: {:.2f},Time:  {:.2f}s, dropout users: {}".format(iter, acc_t, time_t, drop_users))
+        # print("Round {:3d},Testing accuracy: {:.2f},Time:  {:.2f}s, dropout users: {}".format(iter, acc_t, time_t, drop_users))
 
         acc_test.append(acc_t.item())
         loss_test.append(loss_t)
         time_test.append(time_t)
+
+        # choose user 0 to analysis security
+        chosen_one = nondrop_users[0]
+        train_index = dict_users[chosen_one]
+        if args.model == 'cnn' and args.dataset == 'cifar':
+            net_analysis = CNNCifar(args=args)
+        elif args.model == 'cnn' and (args.dataset == 'mnist' or args.dataset == 'fashion-mnist'):
+            net_analysis = CNNMnist(args=args)
+        else:
+            print("Model selection error!")
+        net_analysis.load_state_dict({k.replace('_module.', ''):v for k, v in copy.deepcopy(w_locals[0]).items()})
+        audit_result = security_analysis(args, sec_train, sec_test, train_index, net_analysis)
+        security_test.append(audit_result.roc_auc)
+
+        print("Round {:3d},Testing accuracy: {:.2f}, Time:  {:.2f}s, Attack accuracy: {:.2f}".format(iter, acc_t, time_t, audit_result.roc_auc))
 
     rootpath = './log'
     if not os.path.exists(rootpath):
@@ -201,6 +220,8 @@ if __name__ == '__main__':
         os.makedirs(rootpath + '/loss')
     if not os.path.exists(rootpath + '/time'):
         os.makedirs(rootpath + '/time')
+    if not os.path.exists(rootpath + '/security'):
+        os.makedirs(rootpath + '/security')
     accfile = open(rootpath + '/acc' + '/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}.dat'.
                     format(args.dataset, args.model, args.epochs, args.iid,
                     args.dp_mechanism, args.dp_epsilon, args.drop), "w")
@@ -210,6 +231,9 @@ if __name__ == '__main__':
     timefile = open(rootpath + '/time' + '/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}_time_{:.2f}.dat'.
                     format(args.dataset, args.model, args.epochs, args.iid,
                     args.dp_mechanism, args.dp_epsilon, args.drop, sum(time_test)), "w")
+    securityfile = open(rootpath + '/security' + '/fed_{}_{}_{}_iid{}_dp_{}_epsilon_{}_drop_{}_time_{:.2f}.dat'.
+                        format(args.dataset, args.model, args.epochs, args.iid,
+                        args.dp_mechanism, args.dp_epsilon, args.drop), "w")
 
     for ac in acc_test:
         sac = str(ac)
@@ -229,6 +253,12 @@ if __name__ == '__main__':
         timefile.write('\n')
     timefile.close()
 
+    for se in security_test:
+        sse = str(se)
+        securityfile.write(sse)
+        securityfile.write('\n')
+    securityfile.close()
+
     # plot loss & accuracy curve
     plt.figure()
     plt.plot(range(len(acc_test)), acc_test)
@@ -240,4 +270,10 @@ if __name__ == '__main__':
     plt.plot(range(len(loss_test)), loss_test)
     plt.ylabel('test loss')
     plt.savefig(rootpath + '/loss' + '/fed_{}_{}_{}_C{}_iid{}_dp_{}_epsilon_{}_drop_{}_loss.png'.format(
+            args.dataset, args.model, args.epochs, args.frac, args.iid, args.dp_mechanism, args.dp_epsilon, args.drop))
+    
+    plt.figure()
+    plt.plot(range(len(security_test)), security_test)
+    plt.ylabel('attack accuracy')
+    plt.savefig(rootpath + '/security' + '/fed_{}_{}_{}_C{}_iid{}_dp_{}_epsilon_{}_drop_{}_security.png'.format(
             args.dataset, args.model, args.epochs, args.frac, args.iid, args.dp_mechanism, args.dp_epsilon, args.drop))
