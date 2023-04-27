@@ -32,7 +32,7 @@ def FlatSplitParams(model, split_num):
     return split_index, flat_indice
 
 # Proposed scheme to add dp noise or other clients' weight on client's weight
-def ProtectWeight(local_w, noise_slices, weight_slices, split_index, id, flat_indice, device): # add dp noise & other users' weight
+def ProtectWeight(local_w, noise_slices, weight_slices, split_index, id, flat_indice, device, clip): # add dp noise & other users' weight
     split_num = len(split_index)-1
     # flat local_w which wants to add protect mechanism
     flat_w = torch.cat([torch.flatten(value) for _, value in local_w.items()]).view(-1, 1)
@@ -41,10 +41,13 @@ def ProtectWeight(local_w, noise_slices, weight_slices, split_index, id, flat_in
     # add dp_noise & weight_slice on slice local_w by index
     for i, seq in enumerate(add_sequence):
         if weight_slices[seq] == 'D':
+            flat_w[split_index[i]:split_index[i+1]] = flat_w[split_index[i]:split_index[i+1]] / torch.max(torch.FloatTensor([1]).to(device), torch.abs(flat_w[split_index[i]:split_index[i+1]]) / clip)
             flat_w[split_index[i]:split_index[i+1]] += noise_slices[id][i].to(device)
         else:
             flat_w[split_index[i]:split_index[i+1]] = (flat_w[split_index[i]:split_index[i+1]] + weight_slices[seq][i]) / 2
     # unflat protected local_w
     l = [flat_w[s:e] for (s, e) in flat_indice]
     for index, (key, value) in enumerate(local_w.items()):
+        if value.shape == torch.Size([]):
+            continue
         local_w[key] = l[index].view(*value.shape)
