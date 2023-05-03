@@ -80,7 +80,7 @@ def dp_train(model, device, idx, lr, epochs, batch_size, train_loader, test_load
     print("training the target model uses: ", time.time() - start_time)
     return model.state_dict()
 
-def nor_train(model, device, idx, lr, epochs, train_loader, test_loader, train_data, train_targets, test_data, test_targets, audit_data, audit_targets, sec_record):
+def nor_train(model, device, idx, lr, epochs, train_loader):
     model.to(device)
     model.train()
 
@@ -88,7 +88,6 @@ def nor_train(model, device, idx, lr, epochs, train_loader, test_loader, train_d
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.995)
-    start_time = time.time()
     # Loop over each epoch
     for epoch_idx in range(epochs):
         train_loss = 0
@@ -127,18 +126,18 @@ def nor_train(model, device, idx, lr, epochs, train_loader, test_loader, train_d
     #     sec_record.append(loss_audit_results[0].roc_auc)
     # test_loss, test_acc = test(copy.deepcopy(model), device, test_loader)
     # print(f"Test loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%")
-    # print("training the target model uses: ", time.time() - start_time)
+    # scheduler.step()
     # lr[idx] = scheduler.get_last_lr()[0]
     return model.state_dict()
 
-def dp_trainv2(model, device, idx, lr, epochs, train_loader, test_loader, train_data, train_targets, test_data, test_targets, audit_data, audit_targets, sec_record, epsilon, delta, glob_epochs, clip):
+def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_data, epsilon, delta, glob_epochs, clip):
     model.to(device)
     model.train()
 
     # Set the loss function and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    start_time = time.time()
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.995)
     # Loop over each epoch
     for epoch_idx in range(epochs):
         train_loss = 0
@@ -176,9 +175,10 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, test_loader, train_
     #     print(f"Attack_acc: {100. * loss_audit_results[0].roc_auc:.2f}%")
     # add Gaussian noise
     model_w = model.state_dict()
-    sensitivity = 2 * lr * clip  / len(train_data)
-    # sigma = np.sqrt(2 * np.log(1.25 / (delta / (glob_epochs * epochs)))) * 1 / (epsilon / (glob_epochs * epochs))
+    # sensitivity = 5 * lr * clip  / len(train_data)
+    sensitivity = lr[idx] * clip  / len(train_data)
     sigma = np.sqrt(2 * np.log(1.25 / (delta / glob_epochs))) / (epsilon / glob_epochs) 
+    # sigma = np.sqrt(2 * np.log(1.25 / delta)) / epsilon
     for name, param in model_w.items():
         model_w[name] = param / torch.max(torch.FloatTensor([1]).to(device), torch.abs(param) / clip)
         # model_w[name] += torch.normal(0, sensitivity * sigma, param.shape).to(device)
@@ -189,17 +189,18 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, test_loader, train_
     # loss_noisy_audit_results = sec_func(copy.deepcopy(model), criterion, device, train_data, train_targets, test_data, test_targets, audit_data, audit_targets)
     # test_loss, test_acc = test(copy.deepcopy(model), device, test_loader)
     # print(f"Test loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}% | Attack Acc: {100 * loss_noisy_audit_results[0].roc_auc:.2f}%")
-    # print("training the target model uses: ", time.time() - start_time)
+    # scheduler.step()
+    # lr[idx] = scheduler.get_last_lr()[0]
     return model_w
 
-def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, test_loader, train_data, train_targets, test_data, test_targets, audit_data, audit_targets, epsilon, delta, split_index, flat_indice, num_clients, clip):
+def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, train_data, epsilon, delta, split_index, flat_indice, num_clients, clip):
     model.to(device)
     model.train()
 
     # Set the loss function and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    start_time = time.time()
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.995)
     # Loop over each epoch
     for epoch_idx in range(local_e):
         train_loss = 0
@@ -235,12 +236,14 @@ def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, test_l
 
     # test_loss, test_acc = test(copy.deepcopy(model), device, test_loader)
     # print(f"Test loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%")
-    # print("training the target model uses: ", time.time() - start_time)
 
-    sensitivity = 2 * lr * clip  / len(train_data)
+    sensitivity = lr[idx] * clip  / len(train_data)
     sigma = np.sqrt(2 * np.log(1.25 / (delta / glob_e))) / (epsilon / glob_e)
 
     weight_slice = SliceLocalWeight(copy.deepcopy(model), split_index)
     noise_slice = SliceLocalNoise(sensitivity, sigma, num_clients, flat_indice)
+
+    # scheduler.step()
+    # lr[idx] = scheduler.get_last_lr()[0]
 
     return model.state_dict(), weight_slice, noise_slice

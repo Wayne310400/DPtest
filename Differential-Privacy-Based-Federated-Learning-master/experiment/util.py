@@ -49,7 +49,7 @@ def sec_func(model, criterion, device, train_data, train_targets, test_data, tes
             )
     audit_obj = Audit(
         metrics=metric,
-        inference_game_type=InferenceGame.PRIVACY_LOSS_MODEL,
+        inference_game_type=InferenceGame.AVG_PRIVACY_LOSS_TRAINING_ALGO,
         target_info_sources=target_info_source,
         reference_info_sources=reference_info_source,
         save_logs= False
