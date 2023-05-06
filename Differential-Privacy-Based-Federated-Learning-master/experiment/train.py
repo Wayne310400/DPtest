@@ -87,7 +87,7 @@ def nor_train(model, device, idx, lr, epochs, train_loader):
     # Set the loss function and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.995)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9995)
     # Loop over each epoch
     for epoch_idx in range(epochs):
         train_loss = 0
@@ -111,6 +111,7 @@ def nor_train(model, device, idx, lr, epochs, train_loader):
             loss.backward()
             # Take a step using optimizer
             optimizer.step()
+            # scheduler.step()
 
             # Add the loss to the total loss
             train_loss += loss.item()
@@ -137,7 +138,7 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_data, epsilon
     # Set the loss function and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.995)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.995)
     # Loop over each epoch
     for epoch_idx in range(epochs):
         train_loss = 0
@@ -164,6 +165,7 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_data, epsilon
 
             # Take a step using optimizer
             optimizer.step()
+            scheduler.step()
 
             # Add the loss to the total loss
             train_loss += loss.item()
@@ -176,7 +178,7 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_data, epsilon
     # add Gaussian noise
     model_w = model.state_dict()
     # sensitivity = 5 * lr * clip  / len(train_data)
-    sensitivity = lr[idx] * clip  / len(train_data)
+    sensitivity = 2 * lr[idx] * clip  / len(train_data)
     sigma = np.sqrt(2 * np.log(1.25 / (delta / glob_epochs))) / (epsilon / glob_epochs) 
     # sigma = np.sqrt(2 * np.log(1.25 / delta)) / epsilon
     for name, param in model_w.items():
@@ -190,7 +192,7 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_data, epsilon
     # test_loss, test_acc = test(copy.deepcopy(model), device, test_loader)
     # print(f"Test loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}% | Attack Acc: {100 * loss_noisy_audit_results[0].roc_auc:.2f}%")
     # scheduler.step()
-    # lr[idx] = scheduler.get_last_lr()[0]
+    lr[idx] = scheduler.get_last_lr()[0]
     return model_w
 
 def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, train_data, epsilon, delta, split_index, flat_indice, num_clients, clip):
