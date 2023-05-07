@@ -249,3 +249,77 @@ def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, train_
     # lr[idx] = scheduler.get_last_lr()[0]
 
     return model.state_dict(), weight_slice, noise_slice
+
+def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indice, clip, train_data, delta, glob_epochs, epsilon):
+    global_weight = copy.deepcopy(model.state_dict())
+    # random select partial global parameter to update local model
+    if last_w[idx] != []:
+        glo_w = copy.deepcopy(global_weight)
+        flat_last_w = torch.cat([torch.flatten(value) for _, value in last_w[idx].items()]).view(-1, 1)
+        flat_glob_w = torch.cat([torch.flatten(value) for _, value in glo_w.items()]).view(-1, 1)
+        rand_index = np.random.choice(range(len(flat_glob_w)), int(len(flat_glob_w) * 0.1), replace=False)
+        flat_last_w[rand_index] = flat_glob_w[rand_index]
+        # unflat protected local_w
+        l = [flat_last_w[s:e] for (s, e) in flat_indice]
+        for index, (key, value) in enumerate(glo_w.items()):
+            if value.shape == torch.Size([]):
+                continue
+            glo_w[key] = l[index].view(*value.shape)
+        model.load_state_dict(glo_w)
+
+    model.to(device)
+    model.train()
+
+    # Set the loss function and optimizer
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9995)
+    # Loop over each epoch
+    for epoch_idx in range(epochs):
+        train_loss = 0
+        # Loop over the training set
+        for data, target in train_loader:
+            # Move data to the device
+            data, target = data.to(device, non_blocking=True), target.to(device,non_blocking=True)
+            # Cast target to long tensor
+            target = target
+
+            # Set the gradients to zero
+            optimizer.zero_grad(set_to_none=True)
+
+            # Get the model output
+            output = model(data)
+
+            # Calculate the loss
+            loss = criterion(output, target)
+
+            # Perform the backward pass
+            loss.backward()
+            # Take a step using optimizer
+            optimizer.step()
+            # scheduler.step()
+
+            # Add the loss to the total loss
+            train_loss += loss.item()
+        # scheduler.step()
+
+    # select partial parameters to 0, the others remain origin value
+    local_weight = copy.deepcopy(model.state_dict())
+    sensitivity = 2 * lr[idx] * clip  / len(train_data)
+    sigma = np.sqrt(2 * np.log(1.25 / (delta / glob_epochs))) / (epsilon / glob_epochs) 
+    for name, param in local_weight.items():
+        local_weight[name] = param / torch.max(torch.FloatTensor([1]).to(device), torch.abs(param) / clip)
+        local_weight[name] += torch.from_numpy(np.random.normal(loc=0, scale=sensitivity * sigma, size=param.shape)).to(device)
+    flat_l = torch.cat([torch.flatten(value) for _, value in local_weight.items()]).view(-1, 1)
+    flat_g = torch.cat([torch.flatten(value) for _, value in global_weight.items()]).view(-1, 1)
+    value, index = torch.topk(torch.abs(torch.sub(flat_l, flat_g)), int(len(flat_l)*0.9), dim=0, largest=False) # choose smallest
+    flat_l[index] = 0
+    l = [flat_l[s:e] for (s, e) in flat_indice]
+    for index, (key, value) in enumerate(local_weight.items()):
+        if(value.shape == torch.Size([])):
+            continue
+        local_weight[key] = l[index].view(*value.shape)
+            
+    # scheduler.step()
+    # lr[idx] = scheduler.get_last_lr()[0]
+    return local_weight, model.state_dict()
