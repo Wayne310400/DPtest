@@ -69,8 +69,6 @@ def test(model, device, test_loader):
         for data, target in test_loader:
             # Moving data and target to the device
             data, target = data.to(device), target.to(device)
-            # Cast target to long tensor
-            target = target
 
             # Computing output and loss
             output = model(data)
