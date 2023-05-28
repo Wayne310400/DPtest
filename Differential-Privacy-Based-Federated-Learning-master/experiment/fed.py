@@ -1,15 +1,13 @@
 import torch
 import copy
 
-def aggregate(w_locals, clients, device):
-    """FedAvg"""
-    new_w = copy.deepcopy(w_locals[0])
-    for name in new_w:
-        new_w[name] = torch.zeros(new_w[name].shape).to(device)
-    for idx in range(clients):
-        for name in new_w:
-            new_w[name] += w_locals[idx][name].to(device) * (1 / clients)
-    return copy.deepcopy(new_w)
+def aggregate(w, device):
+    w_avg = copy.deepcopy(w[0])
+    for k in w_avg.keys():
+        for i in range(1, len(w)):
+            w_avg[k] += w[i][k]
+        w_avg[k] = torch.div(w_avg[k], len(w))
+    return w_avg
 
 # to get the index of parameter multi-dim parameter to 1 dim 
 def FlatSplitParams(model, split_num):

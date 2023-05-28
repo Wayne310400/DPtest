@@ -88,7 +88,8 @@ def nor_train(model, device, idx, lr, epochs, train_loader, rate_decay):
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
     if rate_decay:
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
     # Loop over each epoch
     for epoch_idx in range(epochs):
         train_loss = 0
@@ -114,13 +115,16 @@ def nor_train(model, device, idx, lr, epochs, train_loader, rate_decay):
             # Add the loss to the total loss
             train_loss += loss.item()
 
+        # if rate_decay:
+        #     scheduler.step(train_loss)
+
     if rate_decay:
         scheduler.step()
-        lr[idx] = scheduler.get_last_lr()[0]
+        lr[idx] = optimizer.param_groups[0]["lr"]
 
     return model.state_dict()
 
-def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_size, epsilon, delta, glob_epochs, clip, ontrain_frac, rate_decay):
+def dp_trainv2(model, device, idx, lr, epochs, train_loader, epsilon, delta, glob_epochs, clip, ontrain_frac, rate_decay, dp_strong):
     model.to(device)
     model.train()
 
@@ -128,7 +132,7 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_size, epsilon
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
     if rate_decay:
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
     # Loop over each epoch
     for epoch_idx in range(epochs):
         train_loss = 0
@@ -154,23 +158,28 @@ def dp_trainv2(model, device, idx, lr, epochs, train_loader, train_size, epsilon
 
             # Add the loss to the total loss
             train_loss += loss.item()
+
+        if rate_decay:
+            scheduler.step(train_loss)
             
     # add Gaussian noise
     model_w = model.state_dict()
-    sensitivity = lr[idx] * clip  / train_size
-    times = ontrain_frac * glob_epochs
+    sensitivity = lr[idx] * clip / dp_strong
+    times = glob_epochs
     sigma = np.sqrt(2 * np.log(1.25 / (delta / times))) / (epsilon / times) 
     for name, param in model_w.items():
+        # print('before: ', param[0][0])
         model_w[name] = param / torch.max(torch.FloatTensor([1]).to(device), torch.abs(param) / clip)
+        # print('after: ', model_w[name][0][0])
         model_w[name] += torch.from_numpy(np.random.normal(loc=0, scale=sensitivity * sigma, size=param.shape)).to(device)
+        # print('noise: ', model_w[name][0][0])
 
     if rate_decay:
-        scheduler.step()
-        lr[idx] = scheduler.get_last_lr()[0]
+        lr[idx] = optimizer.param_groups[0]["lr"]
 
     return model_w
 
-def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, train_size, epsilon, delta, split_index, flat_indice, num_clients, clip, ontrain_frac, rate_decay):
+def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, epsilon, delta, split_index, flat_indice, num_clients, clip, ontrain_frac, rate_decay, dp_strong):
     model.to(device)
     model.train()
 
@@ -178,7 +187,8 @@ def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, train_
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
     if rate_decay:
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.5)
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
     # Loop over each epoch
     for epoch_idx in range(local_e):
         train_loss = 0
@@ -204,8 +214,11 @@ def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, train_
             # Add the loss to the total loss
             train_loss += loss.item()
 
-    times = ontrain_frac * glob_e
-    sensitivity = lr[idx] * clip  / train_size
+        # if rate_decay:
+        #     scheduler.step(train_loss)
+
+    times = glob_e
+    sensitivity = lr[idx] * clip  / dp_strong
     sigma = np.sqrt(2 * np.log(1.25 / (delta / times))) / (epsilon / times)
 
     weight_slice = SliceLocalWeight(copy.deepcopy(model), split_index)
@@ -213,18 +226,18 @@ def proposed_train(model, device, idx, lr, local_e, glob_e, train_loader, train_
 
     if rate_decay:
         scheduler.step()
-        lr[idx] = scheduler.get_last_lr()[0]
+        lr[idx] = optimizer.param_groups[0]["lr"]
 
     return model.state_dict(), weight_slice, noise_slice
 
-def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indice, clip, train_size, delta, glob_epochs, epsilon, ontrain_frac, rate_decay):
+def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indice, clip, delta, glob_epochs, epsilon, ontrain_frac, rate_decay, dp_strong):
     global_weight = copy.deepcopy(model.state_dict())
     # random select partial global parameter to update local model
     if last_w[idx] != []:
         glo_w = copy.deepcopy(global_weight)
         flat_last_w = torch.cat([torch.flatten(value) for _, value in last_w[idx].items()]).view(-1, 1).to(device)
         flat_glob_w = torch.cat([torch.flatten(value) for _, value in glo_w.items()]).view(-1, 1).to(device)
-        rand_index = np.random.choice(range(len(flat_glob_w)), int(len(flat_glob_w) * 0.1), replace=False)
+        rand_index = np.random.choice(range(len(flat_glob_w)), int(len(flat_glob_w) * 1), replace=False)
         flat_last_w[rand_index] = flat_glob_w[rand_index]
         # unflat protected local_w
         l = [flat_last_w[s:e] for (s, e) in flat_indice]
@@ -241,7 +254,7 @@ def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indi
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
     if rate_decay:
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
     # Loop over each epoch
     for epoch_idx in range(epochs):
         train_loss = 0
@@ -267,10 +280,13 @@ def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indi
             # Add the loss to the total loss
             train_loss += loss.item()
 
+        if rate_decay:
+            scheduler.step(train_loss)
+
     # select partial parameters to 0, the others remain origin value
     local_weight = copy.deepcopy(model.state_dict())
-    times = ontrain_frac * glob_epochs
-    sensitivity = lr[idx] * clip  / train_size
+    times = glob_epochs
+    sensitivity = lr[idx] * clip  / dp_strong
     sigma = np.sqrt(2 * np.log(1.25 / (delta / times))) / (epsilon / times)
     for name, param in local_weight.items():
         local_weight[name] = param / torch.max(torch.FloatTensor([1]).to(device), torch.abs(param) / clip)
@@ -286,7 +302,6 @@ def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indi
         local_weight[key] = l[index].view(*value.shape)
             
     if rate_decay:
-        scheduler.step()
-        lr[idx] = scheduler.get_last_lr()[0]
+        lr[idx] = optimizer.param_groups[0]["lr"]
 
     return local_weight, model.state_dict()

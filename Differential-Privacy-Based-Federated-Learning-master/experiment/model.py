@@ -59,15 +59,15 @@ class CNNCifar(nn.Module):
         self.fc1 = nn.Linear(64 * 4 * 4, 384)
         self.fc2 = nn.Linear(384, 192)
         self.fc3 = nn.Linear(192, 10)
-        self.dropout = nn.Dropout(p=.5)
 
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
         # x = x.view(-1, 16 * 5 * 5)
-        x = x.view(-1, 64 * 4 * 4)
+        # x = x.view(-1, 64 * 4 * 4)
         # x = F.relu(self.fc1(x))
-        x = self.dropout(F.relu(self.fc1(x)))
+        x = torch.flatten(x, 1)
+        x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
@@ -286,7 +286,7 @@ class DenseNet(nn.Module):
         num_planes += nblocks[3]*growth_rate
 
         self.bn = nn.BatchNorm2d(num_planes)
-        self.linear = nn.Linear(num_planes, num_classes)
+        self.fc = nn.Linear(num_planes, num_classes)
 
     def _make_dense_layers(self, block, in_planes, nblock):
         layers = []
@@ -303,7 +303,7 @@ class DenseNet(nn.Module):
         out = self.dense4(out)
         out = F.avg_pool2d(F.relu(self.bn(out)), 4)
         out = out.view(out.size(0), -1)
-        out = self.linear(out)
+        out = self.fc(out)
         return out
     
 def DenseNet121():
