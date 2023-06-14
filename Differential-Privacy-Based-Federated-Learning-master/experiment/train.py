@@ -237,7 +237,7 @@ def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indi
         glo_w = copy.deepcopy(global_weight)
         flat_last_w = torch.cat([torch.flatten(value) for _, value in last_w[idx].items()]).view(-1, 1).to(device)
         flat_glob_w = torch.cat([torch.flatten(value) for _, value in glo_w.items()]).view(-1, 1).to(device)
-        rand_index = np.random.choice(range(len(flat_glob_w)), int(len(flat_glob_w) * 1), replace=False)
+        rand_index = np.random.choice(range(len(flat_glob_w)), int(len(flat_glob_w) * 0.7), replace=False)
         flat_last_w[rand_index] = flat_glob_w[rand_index]
         # unflat protected local_w
         l = [flat_last_w[s:e] for (s, e) in flat_indice]
@@ -293,7 +293,7 @@ def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indi
         local_weight[name] += torch.from_numpy(np.random.normal(loc=0, scale=sensitivity * sigma, size=param.shape)).to(device)
     flat_l = torch.cat([torch.flatten(value) for _, value in local_weight.items()]).view(-1, 1).to(device)
     flat_g = torch.cat([torch.flatten(value) for _, value in global_weight.items()]).view(-1, 1).to(device)
-    value, index = torch.topk(torch.abs(torch.sub(flat_l, flat_g)), int(len(flat_l) * 0.9), dim=0, largest=False) # choose smallest
+    value, index = torch.topk(torch.abs(torch.sub(flat_l, flat_g)), int(len(flat_l) * 0.7), dim=0, largest=False) # choose smallest
     flat_l[index] = flat_g[index]
     l = [flat_l[s:e] for (s, e) in flat_indice]
     for index, (key, value) in enumerate(local_weight.items()):

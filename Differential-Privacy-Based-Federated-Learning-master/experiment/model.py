@@ -154,6 +154,7 @@ class ResidualBlock(nn.Module):
         return out
 
 # ResNet
+# https://pytorch-tutorial.readthedocs.io/en/latest/tutorial/chapter03_intermediate/3_2_2_cnn_resnet_cifar10/
 class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes=10):
         super(ResNet, self).__init__()
@@ -255,7 +256,7 @@ class Transition(nn.Module):
         out = F.avg_pool2d(out, 2)
         return out
 
-
+# https://github.com/kuangliu/pytorch-cifar/blob/master/models/densenet.py
 class DenseNet(nn.Module):
     def __init__(self, block, nblocks, growth_rate=12, reduction=0.5, num_classes=10):
         super(DenseNet, self).__init__()
