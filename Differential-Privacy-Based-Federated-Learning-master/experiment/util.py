@@ -102,11 +102,11 @@ def SliceLocalWeight(model, split_index):
     flat_w = torch.cat([torch.flatten(value) for _, value in state_dict.items()]).view(-1, 1)
     return torch.chunk(flat_w, split_num)
 
-def SliceLocalNoise(sensitivity, noise_scale, num_users, flat_indice):
+def SliceLocalNoise(sensitivity, noise_scale, clip_num, flat_indice):
     noise_store = torch.tensor([])
     for (s, e) in flat_indice:
         noise_unit = torch.from_numpy(np.random.normal(loc=0, scale=sensitivity * noise_scale, size=(e-s, 1)))
         noise_store = torch.cat((noise_store, noise_unit))
     # cut noise
-    weight_slice = torch.chunk(noise_store, num_users)
+    weight_slice = torch.chunk(noise_store, clip_num)
     return weight_slice

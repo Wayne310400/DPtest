@@ -305,3 +305,54 @@ def indust_train(model, device, idx, lr, epochs, train_loader, last_w, flat_indi
         lr[idx] = optimizer.param_groups[0]["lr"]
 
     return local_weight, model.state_dict()
+
+def proposed_train2(model, device, idx, lr, local_e, glob_e, train_loader, epsilon, delta, split_index, flat_indice, clip, rate_decay, dp_strong, cut_num):
+    model.to(device)
+    model.train()
+
+    # Set the loss function and optimizer
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr[idx], momentum=0.9)
+    if rate_decay:
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.5)
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
+    # Loop over each epoch
+    for epoch_idx in range(local_e):
+        train_loss = 0
+        # Loop over the training set
+        for data, target in train_loader:
+            # Move data to the device
+            data, target = data.to(device, non_blocking=True), target.to(device,non_blocking=True)
+
+            # Set the gradients to zero
+            optimizer.zero_grad(set_to_none=True)
+
+            # Get the model output
+            output = model(data)
+
+            # Calculate the loss
+            loss = criterion(output, target)
+
+            # Perform the backward pass
+            loss.backward()
+            # Take a step using optimizer
+            optimizer.step()
+
+            # Add the loss to the total loss
+            train_loss += loss.item()
+
+        # if rate_decay:
+        #     scheduler.step(train_loss)
+
+    times = glob_e
+    sensitivity = lr[idx] * clip  / dp_strong
+    sigma = np.sqrt(2 * np.log(1.25 / (delta / times))) / (epsilon / times)
+
+    weight_slice = SliceLocalWeight(copy.deepcopy(model), split_index)
+    noise_slice = SliceLocalNoise(sensitivity, sigma, cut_num, flat_indice)
+
+    if rate_decay:
+        scheduler.step()
+        lr[idx] = optimizer.param_groups[0]["lr"]
+
+    return model.state_dict(), weight_slice, noise_slice
